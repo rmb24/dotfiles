@@ -10,6 +10,10 @@ require("awful.autofocus")
 local wibox = require("wibox")
 -- Theme handling library
 local beautiful = require("beautiful")
+local xresources = require("beautiful.xresources")
+
+local dpi = xresources.apply_dpi
+
 -- Notification library
 local naughty = require("naughty")
 local menubar = require("menubar")
@@ -20,13 +24,15 @@ require("awful.hotkeys_popup.keys")
 -- awful.spawn.with_shell("polybar")
 awful.spawn.with_shell("picom &")
 awful.spawn.with_shell("nitrogen --restore")
-awful.spawn.with_shell("nm-applet &")
-awful.spawn.with_shell("blueman-applet")
+-- awful.spawn.with_shell("nm-applet &")
+-- awful.spawn.with_shell("blueman-applet")
 -- Import module:
 local battery_widget = require("modules/battery-widget")
 local layout_indicator = require("modules/keyboard-layout-indicator")
 local volume_control = require("modules/volume-control")
-local brightness_ctrl = require("modules/brightness")
+local brightness_widget = require("awesome-wm-widgets.brightness-widget.brightness")
+local volume_widget = require('awesome-wm-widgets.volume-widget.volume')
+local bling = require("bling")
 -- local screenshot = require("modules/screenshot")
 
 volumecfg = volume_control({
@@ -45,19 +51,28 @@ volumecfg = volume_control({
         on = '% 3d%% ', -- three digits, fill with leading spaces
         off = '% 3dM '
     },
-    tooltip_text = [[
-  Volume: ${volume}% ${state}
-  Channel: ${channel}
-  Device: ${device}
-  Card: ${card}]]
+    tooltip = "Volume: ${volume}%"
 })
 
-brightnessc = brightness_ctrl({
-    backend = nil,
-    step = 5,
-    timeout = 3,
-    levels = {1, 25, 50, 75, 100}
-})
+local function notification_play_soud()
+    awful.spawn.with_shell("paplay /home/rmb/.config/awesome/sound.mp3")
+
+end
+
+-- Notification Settings 
+naughty.config.spacing = 10
+naughty.config.padding = 10
+naughty.config.defaults.timeout = 5
+naughty.config.defaults.screen = 1
+naughty.config.defaults.position = "top_right"
+naughty.config.defaults.margin = 16
+naughty.config.defaults.border_width = 0
+naughty.config.defaults.ontop = true
+naughty.config.defaults.font = "Iosevka Nerd Font Bold 16"
+naughty.config.defaults.icon_size = 64
+naughty.config.defaults.shape = gears.shape.rounded_rect
+
+-- Notification Sound
 
 -- {{{ Error handling
 -- Check if awesome encountered an error during startup and fell back to
@@ -144,7 +159,6 @@ menubar.utils.terminal = terminal -- Set the terminal for applications that requ
 
 -- {{{ Wibar
 -- Create a textclock widget
-mytextclock = wibox.widget.textclock()
 
 -- Create a wibox for each screen and add it
 local taglist_buttons = gears.table.join(awful.button({}, 1, function(t)
@@ -210,111 +224,122 @@ kbdcfg = layout_indicator({
 
 -- Re-set wallpaper when a screen's geometry changes (e.g. different resolution)
 screen.connect_signal("property::geometry", set_wallpaper)
-
+local setup_tags = require("widgets.tags")
+local widgets = require("widgets")
 awful.screen.connect_for_each_screen(function(s)
     -- Wallpaper
     set_wallpaper(s)
 
     -- Each screen has its own tag table.
-    awful.tag({"1", "2", "3", "4", "5", "6", "7", "8", "9"}, s, awful.layout.layouts[1])
+    setup_tags(s)
 
-    -- Create a promptbox for each screen
-    s.mypromptbox = awful.widget.prompt()
-    -- Create an imagebox widget which will contain an icon indicating which layout we're using.
-    -- We need one layoutbox per screen.
-    s.mylayoutbox = awful.widget.layoutbox(s)
-    s.mylayoutbox:buttons(gears.table.join(awful.button({}, 1, function()
-        awful.layout.inc(1)
-    end), awful.button({}, 3, function()
-        awful.layout.inc(-1)
-    end), awful.button({}, 4, function()
-        awful.layout.inc(1)
-    end), awful.button({}, 5, function()
-        awful.layout.inc(-1)
-    end)))
-    s.mytaglist = awful.widget.taglist {
-        screen = s,
-        filter = awful.widget.taglist.filter.all,
-
-        buttons = taglist_buttons
-    }
-
-    -- Create a tasklist widget
+    -- -- Create a tasklist widget
     -- s.mytasklist = awful.widget.tasklist {
     --     screen = s,
     --     filter = awful.widget.tasklist.filter.currenttags,
     --     buttons = tasklist_buttons
     -- }
 
-    -- Create the wibox
-    function custom_shape(cr, width, height)
-
+    -- Define custom shapes
+    local function custom_shape(cr, width, height)
         gears.shape.rounded_rect(cr, width, height, RADIUS)
-
     end
 
+    local function rounded_background(widget, bg_color, radius)
+        return wibox.widget {
+            {
+                widget,
+                widget = wibox.container.background,
+                bg = bg_color,
+                shape = function(cr, width, height)
+                    gears.shape.rounded_rect(cr, width, height, radius)
+                end
+            },
+            widget = wibox.container.margin
+        }
+    end
+
+    -- Create the wibox
     s.mywibox = awful.wibar({
         border_width = 2,
         position = "top",
         screen = s,
-        shape = custom_shape
+        shape = custom_shape,
+        bg = "#00000000"
     })
-    tbox_separator = wibox.widget.textbox(" | ")
-    l_sep = wibox.widget.textbox(" [ ")
-    m_sep = wibox.widget.textbox(" ][ ")
-    r_sep = wibox.widget.textbox(" ] ")
-    -- Add widgets to the wibox
+
+    -- Separators
+    local tbox_separator = wibox.widget.textbox(" | ")
+    local l_sep = wibox.widget.textbox(" [ ")
+    local m_sep = wibox.widget.textbox(" ][ ")
+    local r_sep = wibox.widget.textbox(" ] ")
+
+    -- Systray widget 
+    local systray = wibox.widget.systray()
+    systray:set_base_size(24)
+
+    -- Envolver el systray en un contenedor para centrarlo verticalmente
+    local systray_container = wibox.container.place(systray, "center", "center")
+
+    -- Left container
+    local left_container = rounded_background({
+        layout = wibox.layout.fixed.horizontal,
+        l_sep,
+        s.mytaglist,
+        r_sep,
+        widgets.music_widget.music_player
+    }, "#1a1b26", 10)
+
+    -- Right container
+    local right_container = rounded_background({
+        layout = wibox.layout.fixed.horizontal,
+        widgets.clock_widget,
+        l_sep,
+        kbdcfg,
+        tbox_separator,
+        brightness_widget {
+            type = 'icon_and_text',
+            program = 'brightnessctl',
+            step = 2,
+            percentage = true,
+            tooltip = true
+        },
+        tbox_separator,
+        volumecfg,
+        tbox_separator,
+        systray_container, -- Usar el contenedor centrado
+        widgets.wifi_widget,
+        widgets.bluetooth_widget,
+        tbox_separator,
+        battery_widget {
+            ac = "AC",
+            adapter = "BAT1",
+            percent_colors = {{25, "red"}, {50, "orange"}, {999, "green"}},
+            listen = true,
+            timeout = 10,
+            widget_text = "${AC_BAT}${color_on}${percent}%${color_off}",
+            widget_font = "Iosevka Nerd Font Bold 16",
+            tooltip_text = "Battery ${state}${time_est}\nCapacity: ${capacity_percent}%",
+            alert_threshold = 5,
+            alert_timeout = 0,
+            alert_title = "Low battery !",
+            alert_text = "${AC_BAT}${time_est}",
+            alert_icon = "themes/battery-low.svg",
+            warn_full_battery = true,
+            ac_prefix = {{25, "󰢜  "}, {50, "󰢝  "}, {75, "󰢞  "}, {95, "󰂋  "}, {100, "󰂅  "}},
+            battery_prefix = {{25, "  "}, {50, "  "}, {75, "  "}, {100, "  "}}
+        },
+        tbox_separator,
+        widgets.power_widget,
+        r_sep
+    }, "#1a1b26", 10)
+
+    -- Setup wibox
     s.mywibox:setup{
         layout = wibox.layout.align.horizontal,
-        { -- Left widgets
-            layout = wibox.layout.fixed.horizontal,
-            l_sep,
-            s.mytaglist,
-            r_sep
-        },
-
-        wibox.container.place(mytextclock, "right"),
-        -- Middle widget
-        { -- Right widgets
-            l_sep,
-            layout = wibox.layout.fixed.horizontal,
-            kbdcfg,
-            tbox_separator,
-            brightnessc,
-            tbox_separator,
-            volumecfg,
-            tbox_separator,
-            wibox.widget.systray(),
-            tbox_separator,
-            -- s.mylayoutbox,
-            battery_widget {
-                ac = "AC",
-                adapter = "BAT1",
-                percent_colors = {{25, "red"}, {50, "orange"}, {999, "green"}},
-                listen = true,
-                timeout = 10,
-                widget_text = "${AC_BAT}${color_on}${percent}%${color_off}",
-                widget_font = "Iosevka Nerd Font Bold 16",
-                tooltip_text = "Battery ${state}${time_est}\nCapacity: ${capacity_percent}%",
-                alert_threshold = 5,
-                alert_timeout = 0,
-                alert_title = "Low battery !",
-                alert_text = "${AC_BAT}${time_est}",
-                alert_icon = "themes/low_battery_icon.png",
-                warn_full_battery = true,
-                full_battery_icon = "themes/full_battery_icon.png"
-                -- battery_prefix = "🔋",
-                -- ac_prefix = "🔌",
-                -- Show different prefixes when charging on AC
-                -- ac_prefix = {{25, "not charged"}, {50, "1/4 charged"}, {75, "2/4 charged"}, {95, "3/4 charged"},
-                --              {100, "fully charged"}},
-
-                -- Show a visual indicator of charge level when on battery power
-                -- battery_prefix = {{25, "#--- "}, {50, "##-- "}, {75, "###- "}, {100, "#### "}}
-            },
-            r_sep
-        }
-
+        left_container,
+        middle_container,
+        right_container
     }
 
 end)
@@ -338,9 +363,9 @@ end), awful.key({}, "XF86AudioLowerVolume", function()
 end), awful.key({}, "XF86AudioMute", function()
     volumecfg:toggle()
 end), awful.key({}, "XF86MonBrightnessDown", function()
-    brightnessc:down()
+    brightness_widget:dec()
 end), awful.key({}, "XF86MonBrightnessUp", function()
-    brightnessc:up()
+    brightness_widget:inc()
 end), awful.key({modkey}, "s", hotkeys_popup.show_help, {
     description = "show help",
     group = "awesome"
@@ -363,12 +388,12 @@ end, {
 end, {
     description = "focus previous by index",
     group = "client"
-}), awful.key({modkey}, "w", function()
-    mymainmenu:show()
-end, {
-    description = "show main menu",
-    group = "awesome"
-}), -- Layout manipulation
+}), -- awful.key({modkey}, "w", function()
+--     mymainmenu:show()
+-- end, {
+--     description = "show main menu",
+--     group = "awesome"
+-- }), -- Layout manipulation
 awful.key({modkey, "Shift"}, "j", function()
     awful.client.swap.byidx(1)
 end, {
@@ -463,6 +488,17 @@ end, {
 end, {
     description = "restore minimized",
     group = "client"
+}), -- Toggle notifications
+awful.key({modkey, "Control"}, "n", function()
+    naughty.suspend()
+end, {
+    description = "toggle notifications",
+    group = "awesome"
+}), -- Show notifications
+awful.key({modkey, "Control"}, "m", function()
+end, {
+    description = "show notifications",
+    group = "awesome"
 }), -- Prompt
 awful.key({modkey}, "Print", function()
     awful.spawn.with_shell("scrot -z ~/Pictures/ScreenShots/%Y-%m-%d-capture.png")
@@ -475,6 +511,10 @@ end), awful.key({modkey}, "e", function()
     awful.spawn.with_shell("thunar")
 end), awful.key({modkey}, "r", function()
     awful.spawn.with_shell("rofi -show drun -show-icons &>> /tmp/rofi.log")
+end), awful.key({modkey}, "b", function()
+    awful.spawn.with_shell("rofi-bluetooth -show-icons &")
+end), awful.key({modkey}, "p", function()
+    awful.spawn.with_shell("rofi -show power-menu -modi power-menu:rofi-power-menu")
 end), awful.key({modkey}, "x", function()
     awful.prompt.run {
         prompt = "Run Lua code: ",
@@ -485,13 +525,14 @@ end), awful.key({modkey}, "x", function()
 end, {
     description = "lua execute prompt",
     group = "awesome"
-}), -- Menubar
-awful.key({modkey}, "p", function()
-    menubar.show()
-end, {
-    description = "show the menubar",
-    group = "launcher"
-}))
+}) -- Menubar
+-- awful.key({modkey}, "p", function()
+--     menubar.show()
+-- end, {
+--     description = "show the menubar",
+--     group = "launcher"
+-- })
+)
 
 clientkeys = gears.table.join(awful.key({modkey}, "f", function(c)
     c.fullscreen = not c.fullscreen
